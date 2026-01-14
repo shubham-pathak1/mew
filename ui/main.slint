@@ -1,0 +1,91 @@
+import { Button, CheckBox, Slider, LineEdit } from "std-widgets.slint";
+
+export component AppWindow inherits Window {
+    title: "Mew - Settings";
+    width: 600px;
+    height: 500px;
+    background: @linear-gradient(180deg, #1a1a1a 0%, #0d0d0d 100%);
+
+    callback browse_clicked();
+    callback apply_clicked(string, string, int);
+    callback exit_clicked();
+
+    in-out property <string> wallpaper_path: "No file selected";
+    in-out property <string> fps_preset: "Balanced";
+    in-out property <int> battery_threshold: 20;
+
+    VerticalLayout {
+        padding: 24px;
+        spacing: 16px;
+
+        Text {
+            text: "🐾 Mew Wallpaper Settings";
+            font-size: 24px;
+            color: #ffffff;
+            horizontal-alignment: center;
+        }
+
+        // Section 1: Wallpaper Selection
+        VerticalLayout {
+            spacing: 8px;
+            Text { text: "Wallpaper Selection"; font-size: 16px; color: #aaaaaa; }
+            HorizontalLayout {
+                spacing: 8px;
+                LineEdit {
+                    text: wallpaper_path;
+                    read-only: true;
+                    placeholder-text: "Select a video file...";
+                }
+                Button {
+                    text: "Browse";
+                    clicked => { root.browse_clicked() }
+                }
+            }
+        }
+
+        // Section 2: Quality & Performance
+        VerticalLayout {
+            spacing: 12px;
+            Text { text: "Quality & Performance"; font-size: 16px; color: #aaaaaa; }
+            
+            HorizontalLayout {
+                Text { text: "FPS Preset: "; vertical-alignment: center; color: #dddddd; }
+                // For MVP simplicity, we can use basic buttons or a proper ComboBox if available
+                Button { text: "Power Saver"; clicked => { root.fps_preset = "Power Saver" } }
+                Button { text: "Balanced"; clicked => { root.fps_preset = "Balanced" } }
+                Button { text: "Performance"; clicked => { root.fps_preset = "Performance" } }
+            }
+
+            HorizontalLayout {
+                spacing: 8px;
+                CheckBox { text: "Pause on Low Battery"; checked: true; }
+                Text { text: "Threshold: " + root.battery_threshold + "%"; vertical-alignment: center; color: #dddddd; }
+                Slider {
+                    minimum: 10;
+                    maximum: 50;
+                    value: root.battery_threshold;
+                    changed(val) => { root.battery_threshold = val }
+                }
+            }
+            
+            CheckBox { text: "Pause on Fullscreen Apps"; checked: true; }
+            CheckBox { text: "Start with Windows"; checked: false; }
+        }
+
+        Spacer {}
+
+        HorizontalLayout {
+            alignment: end;
+            spacing: 12px;
+            Button {
+                text: "Apply";
+                primary: true;
+                clicked => { root.apply_clicked(root.wallpaper_path, root.fps_preset, root.battery_threshold) }
+            }
+            Button {
+                text: "Exit";
+                clicked => { root.exit_clicked() }
+            }
+        }
+    }
+}
