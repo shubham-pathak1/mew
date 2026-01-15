@@ -1,90 +1,297 @@
 import { Button, CheckBox, Slider, LineEdit } from "std-widgets.slint";
 
+component NavItem inherits Rectangle {
+    in property <string> icon;
+    in property <string> label;
+    in property <bool> active;
+    callback clicked();
+
+    height: 48px;
+    background: active ? #222222 : transparent;
+    border-radius: 8px;
+
+    HorizontalLayout {
+        padding-left: 16px;
+        spacing: 12px;
+        alignment: start;
+        Text {
+            text: icon;
+            font-size: 18px;
+            color: active ? #ffffff : #888888;
+            vertical-alignment: center;
+        }
+        Text {
+            text: label;
+            font-size: 14px;
+            font-weight: active ? 600 : 400;
+            color: active ? #ffffff : #888888;
+            vertical-alignment: center;
+        }
+    }
+
+    TouchArea { clicked => { root.clicked() } }
+}
+
+component PremiumButton inherits Rectangle {
+    in property <string> text;
+    in property <bool> primary;
+    callback clicked();
+
+    height: 36px;
+    background: primary ? #e47c66 : #222222;
+    border-radius: 6px;
+    
+    Text {
+        text: root.text;
+        color: primary ? #000000 : #ffffff;
+        font-weight: 600;
+        font-size: 13px;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+
+    TouchArea { clicked => { root.clicked() } }
+}
+
+component SectionHeader inherits Text {
+    font-size: 11px;
+    font-weight: 800;
+    color: #444444;
+}
+
 export component AppWindow inherits Window {
-    title: "Mew - Settings";
-    width: 600px;
-    height: 500px;
-    background: @linear-gradient(180deg, #1a1a1a 0%, #0d0d0d 100%);
+    title: "Mew - Desktop Engine";
+    width: 800px;
+    height: 560px;
+    background: #0a0a0a;
+    default-font-family: "Segoe UI";
 
     callback browse_clicked();
-    callback apply_clicked(string, string, int);
-    callback exit_clicked();
-
+    in-out property <string> active_tab: "Library";
+    
+    // Core properties
     in-out property <string> wallpaper_path: "No file selected";
     in-out property <string> fps_preset: "Balanced";
+    in-out property <string> resolution: "1080p";
     in-out property <int> battery_threshold: 20;
 
-    VerticalLayout {
-        padding: 24px;
-        spacing: 16px;
+    // Settings state
+    in-out property <bool> launch_on_startup: false;
+    in-out property <bool> pause_on_fullscreen: true;
+    in-out property <bool> minimize_to_tray: true;
+    in-out property <bool> enable_glassmorphism: true;
+    in-out property <bool> show_icon_shortcuts: true;
+    in-out property <bool> pause_on_battery: true;
 
-        Text {
-            text: "🐾 Mew Wallpaper Settings";
-            font-size: 24px;
-            color: #ffffff;
-            horizontal-alignment: center;
-        }
+    callback apply_clicked(string, string, string, int, bool, bool, bool, bool, bool, bool);
+    callback exit_clicked();
 
-        // Section 1: Wallpaper Selection
-        VerticalLayout {
-            spacing: 8px;
-            Text { text: "Wallpaper Selection"; font-size: 16px; color: #aaaaaa; }
-            HorizontalLayout {
+    HorizontalLayout {
+        // Sidebar Wrap
+        Rectangle {
+            width: 220px;
+            background: #111111;
+            VerticalLayout {
+                padding: 20px;
                 spacing: 8px;
-                LineEdit {
-                    text: wallpaper_path;
-                    read-only: true;
-                    placeholder-text: "Select a video file...";
+
+                // Logo
+                HorizontalLayout {
+                    padding-bottom: 24px;
+                    padding-left: 8px;
+                    Text {
+                        text: "Mew";
+                        font-size: 24px;
+                        font-weight: 800;
+                        color: #ffffff;
+                    }
                 }
-                Button {
-                    text: "Browse";
-                    clicked => { root.browse_clicked() }
-                }
+
+                NavItem { icon: "📁"; label: "Library"; active: active_tab == "Library"; clicked => { active_tab = "Library" } }
+                NavItem { icon: "⚙️"; label: "Settings"; active: active_tab == "Settings"; clicked => { active_tab = "Settings" } }
+                NavItem { icon: "⚡"; label: "Performance"; active: active_tab == "Performance"; clicked => { active_tab = "Performance" } }
+                
+                Rectangle { vertical-stretch: 1; }
+
+                NavItem { icon: "🚪"; label: "Exit App"; active: false; clicked => { root.exit_clicked() } }
             }
         }
 
-        // Section 2: Quality & Performance
+        // Content Area
         VerticalLayout {
-            spacing: 12px;
-            Text { text: "Quality & Performance"; font-size: 16px; color: #aaaaaa; }
-            
-            HorizontalLayout {
-                Text { text: "FPS Preset: "; vertical-alignment: center; color: #dddddd; }
-                // For MVP simplicity, we can use basic buttons or a proper ComboBox if available
-                Button { text: "Power Saver"; clicked => { root.fps_preset = "Power Saver" } }
-                Button { text: "Balanced"; clicked => { root.fps_preset = "Balanced" } }
-                Button { text: "Performance"; clicked => { root.fps_preset = "Performance" } }
-            }
+            padding: 40px;
+            spacing: 32px;
 
             HorizontalLayout {
-                spacing: 8px;
-                CheckBox { text: "Pause on Low Battery"; checked: true; }
-                Text { text: "Threshold: " + root.battery_threshold + "%"; vertical-alignment: center; color: #dddddd; }
-                Slider {
-                    minimum: 10;
-                    maximum: 50;
-                    value: root.battery_threshold;
-                    changed(val) => { root.battery_threshold = val }
+                Text {
+                    text: active_tab;
+                    font-size: 28px;
+                    font-weight: 700;
+                    color: #ffffff;
                 }
             }
-            
-            CheckBox { text: "Pause on Fullscreen Apps"; checked: true; }
-            CheckBox { text: "Start with Windows"; checked: false; }
-        }
 
-        Spacer {}
-
-        HorizontalLayout {
-            alignment: end;
-            spacing: 12px;
-            Button {
-                text: "Apply";
-                primary: true;
-                clicked => { root.apply_clicked(root.wallpaper_path, root.fps_preset, root.battery_threshold) }
+            // --- LIBRARY TAB ---
+            if active_tab == "Library" : VerticalLayout {
+                spacing: 24px;
+                VerticalLayout {
+                    spacing: 12px;
+                    SectionHeader { text: "CURRENT WALLPAPER"; }
+                    HorizontalLayout {
+                        spacing: 12px;
+                        Rectangle {
+                            height: 48px;
+                            background: #1a1a1a;
+                            border-radius: 8px;
+                            border-width: 1px;
+                            border-color: #222222;
+                            horizontal-stretch: 1;
+                            Text {
+                                x: 16px;
+                                text: wallpaper_path;
+                                color: #ffffff;
+                                font-size: 14px;
+                                vertical-alignment: center;
+                                overflow: elide;
+                                width: parent.width - 32px;
+                            }
+                        }
+                        PremiumButton {
+                            text: "Select Video";
+                            width: 120px;
+                            height: 48px;
+                            clicked => { root.browse_clicked() }
+                        }
+                    }
+                }
             }
-            Button {
-                text: "Exit";
-                clicked => { root.exit_clicked() }
+
+            // --- SETTINGS TAB ---
+            if active_tab == "Settings" : VerticalLayout {
+                spacing: 24px;
+                
+                VerticalLayout {
+                    spacing: 16px;
+                    SectionHeader { text: "SYSTEM BEHAVIOR"; }
+                    
+                    CheckBox { text: "Launch Mew when Windows starts"; checked: launch_on_startup; toggled => { launch_on_startup = self.checked } }
+                    CheckBox { text: "Pause when other apps are fullscreen"; checked: pause_on_fullscreen; toggled => { pause_on_fullscreen = self.checked } }
+                    CheckBox { text: "Minimize to system tray on close"; checked: minimize_to_tray; toggled => { minimize_to_tray = self.checked } }
+                }
+
+                VerticalLayout {
+                    spacing: 16px;
+                    SectionHeader { text: "UI PREFERENCES"; }
+                    CheckBox { text: "Enable glassmorphism effects"; checked: enable_glassmorphism; toggled => { enable_glassmorphism = self.checked } }
+                    CheckBox { text: "Show desktop icon shortcuts"; checked: show_icon_shortcuts; toggled => { show_icon_shortcuts = self.checked } }
+                }
+            }
+
+            // --- PERFORMANCE TAB ---
+            if active_tab == "Performance" : VerticalLayout {
+                spacing: 32px;
+                
+                // Row 1: Quality
+                HorizontalLayout {
+                    spacing: 32px;
+                    VerticalLayout {
+                        spacing: 12px;
+                        horizontal-stretch: 1;
+                        SectionHeader { text: "FPS LIMIT"; }
+                        HorizontalLayout {
+                            spacing: 8px;
+                            PremiumButton { 
+                                text: "15 FPS"; 
+                                primary: fps_preset == "Power Saver";
+                                clicked => { root.fps_preset = "Power Saver" } 
+                            }
+                            PremiumButton { 
+                                text: "30 FPS"; 
+                                primary: fps_preset == "Balanced";
+                                clicked => { root.fps_preset = "Balanced" } 
+                            }
+                            PremiumButton { 
+                                text: "60 FPS"; 
+                                primary: fps_preset == "Performance";
+                                clicked => { root.fps_preset = "Performance" } 
+                            }
+                        }
+                    }
+
+                    VerticalLayout {
+                        spacing: 12px;
+                        horizontal-stretch: 1;
+                        SectionHeader { text: "MAX OUTPUT"; }
+                        HorizontalLayout {
+                            spacing: 8px;
+                            PremiumButton { 
+                                text: "1080p"; 
+                                primary: resolution == "1080p";
+                                clicked => { root.resolution = "1080p" } 
+                            }
+                            PremiumButton { 
+                                text: "4K"; 
+                                primary: resolution == "4K";
+                                clicked => { root.resolution = "4K" } 
+                            }
+                            PremiumButton { 
+                                text: "8K"; 
+                                primary: resolution == "8K";
+                                clicked => { root.resolution = "8K" } 
+                            }
+                        }
+                    }
+                }
+
+                // Row 2: Power
+                VerticalLayout {
+                    spacing: 16px;
+                    SectionHeader { text: "POWER CONSERVATION"; }
+                    
+                    HorizontalLayout {
+                        spacing: 16px;
+                        CheckBox { text: "Auto-pause on battery power"; checked: pause_on_battery; toggled => { pause_on_battery = self.checked } }
+                        Rectangle { horizontal-stretch: 1; }
+                        Text { text: root.battery_threshold + "%"; vertical-alignment: center; color: #ffffff; }
+                        Slider {
+                            width: 140px;
+                            minimum: 10;
+                            maximum: 50;
+                            value: root.battery_threshold;
+                            changed(val) => { root.battery_threshold = val }
+                        }
+                    }
+                    
+                    Text {
+                        text: "Lowering battery threshold saves power during mobility.";
+                        font-size: 12px;
+                        color: #666666;
+                    }
+                }
+            }
+
+            Rectangle { vertical-stretch: 1; }
+
+            HorizontalLayout {
+                alignment: end;
+                PremiumButton {
+                    text: "Apply All Changes";
+                    primary: true;
+                    width: 180px;
+                    height: 48px;
+                    clicked => { root.apply_clicked(
+                        root.wallpaper_path, 
+                        root.fps_preset, 
+                        root.resolution, 
+                        root.battery_threshold,
+                        root.launch_on_startup,
+                        root.pause_on_fullscreen,
+                        root.minimize_to_tray,
+                        root.enable_glassmorphism,
+                        root.show_icon_shortcuts,
+                        root.pause_on_battery
+                    ) }
+                }
             }
         }
     }

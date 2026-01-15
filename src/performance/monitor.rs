@@ -15,29 +15,30 @@ impl PerformanceMonitor {
     }
 
     pub async fn run(&self) -> anyhow::Result<()> {
-        let battery_manager = Manager::new()?;
-        
         loop {
             let mut should_pause = false;
 
             // 1. Check Battery
-            if let Ok(mut batteries) = battery_manager.batteries() {
-                if let Some(Ok(battery)) = batteries.next() {
-                    let state = battery.state();
-                    let percentage = battery.state_of_charge().value() * 100.0;
-                    
-                    // TODO: Use threshold from settings
-                    if state == battery::State::Discharging && percentage < 20.0 {
-                        should_pause = true;
+            if let Ok(battery_manager) = Manager::new() {
+                if let Ok(mut batteries) = battery_manager.batteries() {
+                    if let Some(Ok(battery)) = batteries.next() {
+                        let state = battery.state();
+                        let percentage = battery.state_of_charge().value * 100.0;
+                        
+                        // TODO: Use threshold from settings
+                        if state == battery::State::Discharging && percentage < 20.0 {
+                            should_pause = true;
+                        }
                     }
                 }
             }
+            // battery_manager is dropped here
 
             // 2. Check Fullscreen (simple heuristic)
             if !should_pause {
                 unsafe {
                     let hwnd = GetForegroundWindow();
-                    if hwnd.0 != 0 {
+                    if !hwnd.0.is_null() {
                         let mut rect = windows::Win32::Foundation::RECT::default();
                         if GetWindowRect(hwnd, &mut rect).is_ok() {
                             let screen_w = windows::Win32::UI::WindowsAndMessaging::GetSystemMetrics(windows::Win32::UI::WindowsAndMessaging::SM_CXSCREEN);
@@ -56,10 +57,7 @@ impl PerformanceMonitor {
 
             {
                 let mut s = self.state.lock().unwrap();
-                // For MVP, if either battery or fullscreen, pause. 
-                // In a real app we'd have more complex logic.
-                // s.is_paused = should_pause; 
-                // Actually, let's not override the user's manual pause for now, or use a separate flag.
+                s.is_paused = should_pause; 
             }
 
             sleep(Duration::from_secs(3)).await;

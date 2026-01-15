@@ -7,7 +7,6 @@ mod wallpaper;
 use crate::config::Settings;
 use crate::wallpaper::WallpaperPlayer;
 use crate::performance::PerformanceMonitor;
-use std::sync::Arc;
 
 slint::include_modules!();
 
@@ -27,6 +26,7 @@ async fn main() -> anyhow::Result<()> {
     {
         let mut s = player_state.lock().unwrap();
         s.path = settings.wallpaper.path.clone();
+        s.resolution = settings.wallpaper.resolution.clone();
         s.fps = match settings.wallpaper.fps_preset.as_str() {
             "Power Saver" => 15,
             "Balanced" => 30,
@@ -38,13 +38,13 @@ async fn main() -> anyhow::Result<()> {
     let monitor = PerformanceMonitor::new(player_state.clone());
 
     // 3. Spwan Tasks
-    let player_task = tokio::spawn(async move {
+    let _player_task = tokio::spawn(async move {
         if let Err(e) = player.run().await {
             tracing::error!("Player error: {}", e);
         }
     });
 
-    let monitor_task = tokio::spawn(async move {
+    let _monitor_task = tokio::spawn(async move {
         if let Err(e) = monitor.run().await {
             tracing::error!("Monitor error: {}", e);
         }
@@ -53,11 +53,18 @@ async fn main() -> anyhow::Result<()> {
     // 4. UI Setup
     let ui = AppWindow::new()?;
     ui.set_wallpaper_path(settings.wallpaper.path.clone().into());
-    // ui.set_fps_preset(settings.wallpaper.fps_preset.clone().into());
+    ui.set_resolution(settings.wallpaper.resolution.clone().into());
+    ui.set_fps_preset(settings.wallpaper.fps_preset.clone().into());
     ui.set_battery_threshold(settings.performance.battery_threshold);
+    
+    ui.set_launch_on_startup(settings.startup.launch_with_windows);
+    ui.set_pause_on_fullscreen(settings.performance.pause_on_fullscreen);
+    ui.set_minimize_to_tray(settings.startup.minimize_to_tray);
+    ui.set_enable_glassmorphism(settings.performance.enable_glassmorphism);
+    ui.set_show_icon_shortcuts(settings.performance.show_icon_shortcuts);
+    ui.set_pause_on_battery(settings.performance.pause_on_battery);
 
     let ui_handle = ui.as_weak();
-    let state_for_ui = player_state.clone();
     ui.on_browse_clicked(move || {
         let ui = ui_handle.unwrap();
         if let Some(path) = rfd::FileDialog::new()
@@ -69,11 +76,11 @@ async fn main() -> anyhow::Result<()> {
         }
     });
 
-    let ui_handle = ui.as_weak();
     let state_for_ui = player_state.clone();
-    ui.on_apply_clicked(move |path, fps_preset, threshold| {
+    ui.on_apply_clicked(move |path, fps_preset, resolution, threshold, launch, pause_fs, tray, glass, icons, pause_bat| {
         let mut s = state_for_ui.lock().unwrap();
         s.path = path.to_string();
+        s.resolution = resolution.to_string();
         s.fps = match fps_preset.as_str() {
             "Power Saver" => 15,
             "Balanced" => 30,
@@ -85,10 +92,19 @@ async fn main() -> anyhow::Result<()> {
         let mut settings = Settings::load().unwrap_or_default();
         settings.wallpaper.path = path.to_string();
         settings.wallpaper.fps_preset = fps_preset.to_string();
+        settings.wallpaper.resolution = resolution.to_string();
         settings.performance.battery_threshold = threshold;
+        
+        settings.startup.launch_with_windows = launch;
+        settings.performance.pause_on_fullscreen = pause_fs;
+        settings.startup.minimize_to_tray = tray;
+        settings.performance.enable_glassmorphism = glass;
+        settings.performance.show_icon_shortcuts = icons;
+        settings.performance.pause_on_battery = pause_bat;
+
         let _ = settings.save();
         
-        tracing::info!("Applied settings: {}", path);
+        tracing::info!("Applied settings: {} at {}", path, resolution);
     });
 
     ui.on_exit_clicked(move || {

@@ -15,12 +15,15 @@ pub struct PerformanceSettings {
     pub pause_on_battery: bool,
     pub battery_threshold: i32,
     pub pause_on_fullscreen: bool,
+    pub enable_glassmorphism: bool,
+    pub show_icon_shortcuts: bool,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct StartupSettings {
     pub launch_with_windows: bool,
     pub start_minimized: bool,
+    pub minimize_to_tray: bool,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -45,10 +48,13 @@ impl Default for Settings {
                 pause_on_battery: true,
                 battery_threshold: 20,
                 pause_on_fullscreen: true,
+                enable_glassmorphism: true,
+                show_icon_shortcuts: true,
             },
             startup: StartupSettings {
                 launch_with_windows: false,
                 start_minimized: true,
+                minimize_to_tray: true,
             },
         }
     }

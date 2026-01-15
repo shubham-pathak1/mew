@@ -1,61 +1,62 @@
-# Mew 🐾
+# Mew
 
-**Mew** is a lightweight, performance-focused animated wallpaper engine for Windows. Built with **Rust** and **Slint**, it aims to provide the essential features of a live wallpaper engine with a significantly lower resource footprint than existing alternatives.
+Mew is a minimalist, native video wallpaper engine for Windows designed to be lightweight and unobtrusive. I started this project because I wanted a way to play live wallpapers without the overhead of web-based engines that often use significant system resources.
 
-## 🚀 The Goal: Performance First
-
-Most wallpaper engines use heavy web technologies (WebView2/Chromium) or complex runtimes, often consuming 150MB - 300MB of RAM. **Mew's target is <60MB** during active playback.
-
-- **Lightweight**: Native UI and efficient video decoding.
-- **Battery-Friendly**: Automatically pauses playback based on system state.
-- **Reliable**: Designed to survive Windows Explorer restarts.
-
-## 🛠️ Tech Stack
-
-- **Logic**: [Rust](https://www.rust-lang.org/)
-- **UI Framework**: [Slint](https://slint.dev/) (Native, no WebView overhead)
-- **Video Decoding**: [FFmpeg 7.0](https://ffmpeg.org/) (Hardware accelerated via `ffmpeg-next`)
-- **OS Integration**: [Windows API](https://github.com/microsoft/windows-rs) (GDI rendering, WorkerW integration)
-
-## ✨ Current Status: MVP Scaffolding
-
-Mew is currently in the **Phase 1: MVP** development stage. The core architecture is scaffolded, featuring:
-
-- [x] **Video Decoding**: FFmpeg integration for MP4, WebM, and AVI support.
-- [x] **Desktop Rendering**: The "WorkerW" trick to render wallpapers behind desktop icons.
-- [x] **Performance Logic**: Battery level monitoring and fullscreen app detection.
-- [x] **Settings UI**: A clean, dark-themed Slint interface for configuration.
-
-## 📥 Setup & Building
-
-To build Mew from source, you need the Rust toolchain and FFmpeg 7.0 libraries.
-
-### Prerequisites
-
-1.  **Rust**: [Install Rust](https://www.rust-lang.org/tools/install)
-2.  **FFmpeg 7.0**: 
-    - Download FFmpeg 7.0 shared libraries for Windows.
-    - Set the `FFMPEG_DIR` environment variable to the directory containing `lib` and `include` folders.
-    - Add the `bin` folder to your system `PATH`.
-
-### Build
-
-```bash
-git clone https://github.com/shubham-pathak1/mew.git
-cd mew
-cargo build --release
-```
-
-## 🤝 Contributing
-
-Mew is open-source and welcomes contributions! Being "honest" about our status: it's early days. We are focusing on making the core video engine rock-solid before adding extras like GIFs or shaders.
-
-If you find a bug or have a performance optimization, please open an issue or a PR.
-
-## 📜 License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details (coming soon).
+Built with Rust, Direct3D 11, and Slint, Mew aims to feel like a natural part of the desktop experience rather than a separate, resource-heavy application.
 
 ---
 
-*Built with ❤️ for a faster desktop experience.*
+### Efficiency and Design
+Many live wallpaper applications rely on hidden browser instances. Mew takes a more direct approach:
+- **Native D3D11 Pipeline**: I've implemented a rendering pipeline using triple-buffering and non-blocking presentation to help keep the Windows shell responsive.
+- **Dedicated Threading**: Window management runs on its own thread to minimize interaction delays, such as when right-clicking the desktop or opening icons.
+- **Low Resource Usage**: By using native UI components and efficient texture streaming, I aim to keep the memory footprint as small as possible.
+- **Power Management**: Mew can automatically pause when you're on battery power or when other apps are in fullscreen to help conserve energy.
+
+---
+
+### Technical Details
+- **Logic**: Rust
+- **UI**: [Slint](https://slint.dev/) (GPU-accelerated, native interface)
+- **Decoding**: FFmpeg (supports hardware acceleration via D3D11VA)
+- **Integration**: Deep WorkerW integration for a seamless desktop experience.
+
+---
+
+### Current Progress
+The core engine is in a stable state. I recently reached a point where rendering is decoupled from the main Windows message loop, which helps the interface feel much smoother.
+
+- [x] Multi-threaded architectural isolation
+- [x] Hardware-accelerated 4K/8K playback
+- [x] Clean sidebar-based UI
+- [x] Battery and power-state monitoring
+
+---
+
+### Building from Source
+Mew is open-source and I welcome anyone who wants to tinker with it. You will need the Rust toolchain and FFmpeg 7.x shared libraries.
+
+1. **Clone the repository**:
+   ```powershell
+   git clone https://github.com/shubham-pathak1/mew.git
+   cd mew
+   ```
+2. **Setup Environment**: 
+   Ensure `$env:FFMPEG_DIR` points to your FFmpeg root directory.
+3. **Build**:
+   ```powershell
+   cargo build --release
+   ```
+4. **Run**:
+   The binary will be located at `./target/release/mew.exe`.
+
+---
+
+### Contributing and Support
+I maintain this project individually in my spare time. If you find it useful, a star on the repository is always appreciated.
+
+If you encounter any issues:
+- **Check Configuration**: Most issues relate to GPU drivers or FFmpeg paths.
+- **Open an Issue**: If you find a bug or a performance bottleneck, please open an issue and I'll do my best to look into it.
+
+*Built with care for a cleaner desktop experience.*
