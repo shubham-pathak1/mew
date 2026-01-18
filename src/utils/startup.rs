@@ -1,8 +1,8 @@
 use windows::core::HSTRING;
-use windows::Win32::Foundation::*;
 use windows::Win32::System::Registry::*;
 use anyhow::Result;
 
+#[allow(dead_code)]
 pub fn set_launch_on_startup(enable: bool) -> Result<()> {
     let mut hkey = HKEY::default();
     let sub_key = windows::core::w!("Software\\Microsoft\\Windows\\CurrentVersion\\Run");

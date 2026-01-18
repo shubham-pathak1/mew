@@ -1,5 +1,4 @@
 use battery::Manager;
-use windows::Win32::Foundation::HWND;
 use windows::Win32::UI::WindowsAndMessaging::{GetForegroundWindow, GetWindowRect};
 use std::sync::{Arc, Mutex};
 use crate::wallpaper::player::PlayerState;
