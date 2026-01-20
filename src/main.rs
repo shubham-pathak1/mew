@@ -3,6 +3,7 @@ mod performance;
 mod ui;
 mod utils;
 mod wallpaper;
+mod diagnostics;
 
 use crate::config::Settings;
 use crate::wallpaper::WallpaperPlayer;
@@ -13,6 +14,10 @@ slint::include_modules!();
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt::init();
+    
+    // Run diagnostics immediately
+    diagnostics::dump_desktop_hierarchy();
+    
     tracing::info!("Starting Mew - Lightweight Live Wallpaper Engine");
 
     // 1. Load Settings

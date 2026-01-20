@@ -32,135 +32,76 @@ impl WallpaperRenderer {
         // Spawn a dedicated thread for the window and its message loop
         // This ensures interactions never block the high-precision render loop
         std::thread::spawn(move || {
-            let mut workerw_hwnd = HWND::default();
             let res = (|| -> Result<isize> {
-                let progman = unsafe { FindWindowW(windows::core::w!("Progman"), None)? };
+                // -------------------------------------------------------------------------
+                // PHASE 19: WINDOWS 11 24H2 APPROACH (Based on Lively Wallpaper research)
+                // Create LAYERED child of Progman, positioned BETWEEN DefView and wallpaper
+                // This is the modern approach that works on Windows 11 24H2+
+                // -------------------------------------------------------------------------
                 
-                // Aggressive Shell Spawning for Canary/Insider Builds
-                unsafe {
-                    // Method 1: Standard 0x052C to Progman (0xD, 0x1)
-                    SendMessageTimeoutW(progman, 0x052C, WPARAM(0xD), LPARAM(0x1), SMTO_NORMAL, 1000, None);
-                    std::thread::sleep(std::time::Duration::from_millis(100));
-
-                    // Method 2: Standard 0x052C to Progman (0, 0) - classic method
-                    SendMessageTimeoutW(progman, 0x052C, WPARAM(0), LPARAM(0), SMTO_NORMAL, 1000, None);
-                    std::thread::sleep(std::time::Duration::from_millis(100));
-                    
-                    // Method 3: Blocking SendMessage (last resort force)
-                    SendMessageW(progman, 0x052C, WPARAM(0), LPARAM(0));
+                let progman = unsafe { FindWindowW(windows::core::w!("Progman"), None).unwrap_or_default() };
+                
+                if progman.0.is_null() {
+                    return Err(anyhow::anyhow!("CRITICAL: Could not find Progman"));
                 }
                 
-                std::thread::sleep(std::time::Duration::from_millis(500));
+                tracing::info!("Found Progman: {:?}", progman);
                 
-                let sw = unsafe { GetSystemMetrics(SM_CXSCREEN) };
-                let sh = unsafe { GetSystemMetrics(SM_CYSCREEN) };
+                // Step 1: Send 0x052C to ensure desktop is in "raised" state
+                // This is still important even on 24H2
+                unsafe {
+                    let _ = SendMessageTimeoutW(progman, 0x052C, WPARAM(0xD), LPARAM(0x1), SMTO_NORMAL, 1000, None);
+                    tracing::info!("Sent 0x052C to Progman");
+                }
                 
-                // PROPER SHELL DISCOVERY:
-                // 1. Find SHELLDLL_DefView (contains icons) - it can be under Progman or a WorkerW
-                // 2. Get its parent
-                // 3. Find the sibling WorkerW (created by 0x052C) - that's our target
+                std::thread::sleep(std::time::Duration::from_millis(100));
                 
-                let mut defview_parent = HWND::default();
-                let mut target_workerw = HWND::default();
-                
-                // First check if DefView is under Progman
-                let defview_in_progman = unsafe { 
-                    FindWindowExW(progman, HWND::default(), windows::core::w!("SHELLDLL_DefView"), PCWSTR::null()) 
+                // Step 2: Find DefView (the icon layer)
+                let mut defview_hwnd = unsafe {
+                    FindWindowExW(progman, HWND::default(), windows::core::w!("SHELLDLL_DefView"), PCWSTR::null()).unwrap_or_default()
                 };
                 
-                if let Ok(defview) = defview_in_progman {
-                    if !defview.0.is_null() {
-                        // DefView is under Progman - find sibling WorkerW
-                        defview_parent = progman;
-                        tracing::info!("Found DefView under Progman");
-                    }
-                }
-                
-                // If not found, search all WorkerW windows for DefView
-                if defview_parent.0.is_null() {
+                // Fallback: Check in WorkerW windows
+                if defview_hwnd.0.is_null() {
                     let mut current = HWND::default();
                     loop {
                         current = unsafe { FindWindowExW(HWND::default(), current, windows::core::w!("WorkerW"), PCWSTR::null()) }.unwrap_or_default();
                         if current.0.is_null() { break; }
                         
-                        let defview = unsafe { FindWindowExW(current, HWND::default(), windows::core::w!("SHELLDLL_DefView"), PCWSTR::null()) };
-                        if let Ok(dv) = defview {
-                            if !dv.0.is_null() {
-                                defview_parent = current;
-                                tracing::info!("Found DefView under WorkerW: {:?}", current);
-                                break;
-                            }
-                        }
-                    }
-                }
-                
-                // Now find ANY screen-sized WorkerW that doesn't contain DefView
-                // This is the wallpaper layer created by 0x052C
-                let mut current = HWND::default();
-                loop {
-                    current = unsafe { FindWindowExW(HWND::default(), current, windows::core::w!("WorkerW"), PCWSTR::null()) }.unwrap_or_default();
-                    if current.0.is_null() { break; }
-                    
-                    // Check if this WorkerW contains DefView - if so, skip it
-                    let has_defview = unsafe { 
-                        FindWindowExW(current, HWND::default(), windows::core::w!("SHELLDLL_DefView"), PCWSTR::null()) 
-                    };
-                    if let Ok(dv) = has_defview {
-                        if !dv.0.is_null() { continue; } // Skip the DefView container
-                    }
-                    
-                    // Check if this WorkerW is screen-sized
-                    let mut rect = RECT::default();
-                    if unsafe { GetWindowRect(current, &mut rect) }.is_ok() {
-                        let w = rect.right - rect.left;
-                        let h = rect.bottom - rect.top;
-                        tracing::info!("Found WorkerW: {:?} ({}x{}) - screen is {}x{}", current, w, h, sw, sh);
-                        if w >= sw - 10 && h >= sh - 10 { // Allow small tolerance
-                            target_workerw = current;
-                            tracing::info!("Selected wallpaper WorkerW: {:?}", current);
+                        let dv = unsafe { FindWindowExW(current, HWND::default(), windows::core::w!("SHELLDLL_DefView"), PCWSTR::null()) }.unwrap_or_default();
+                        if !dv.0.is_null() {
+                            defview_hwnd = dv;
                             break;
                         }
                     }
                 }
                 
-                // Final fallback selection
-                let (final_parent, is_defview_parent) = if !target_workerw.0.is_null() {
-                    (target_workerw, false)
-                } else if !defview_parent.0.is_null() && defview_parent != progman {
-                     // DefView is in a WorkerW, but we couldn't find a separate wallpaper WorkerW.
-                     // We can try parenting to that WorkerW directly (behind DefView)?
-                     // No, that hides us. We must parent TO DefView.
-                     // Actually, if DefView is in WorkerW, we want to be sibling of DefView? 
-                     // No, finding DefView handle itself is better.
-                     
-                     // Improve logic: If we found DefView (inside progman or workerw), let's find the DefView HWND itself
-                     let defview_hwnd = unsafe {
-                         if defview_parent == progman {
-                             FindWindowExW(progman, HWND::default(), windows::core::w!("SHELLDLL_DefView"), PCWSTR::null()).unwrap_or_default()
-                         } else {
-                             FindWindowExW(defview_parent, HWND::default(), windows::core::w!("SHELLDLL_DefView"), PCWSTR::null()).unwrap_or_default()
-                         }
-                     };
-
-                     if !defview_hwnd.0.is_null() {
-                         tracing::warn!("No split WorkerW found. Fallback: Parenting directly to SHELLDLL_DefView.");
-                         (defview_hwnd, true)
-                     } else {
-                         tracing::warn!("Critical: DefView parent found but DefView lost? Using Progman.");
-                         (progman, false)
-                     }
-                } else {
-                     // DefView is in Progman.
-                     let defview_hwnd = unsafe { FindWindowExW(progman, HWND::default(), windows::core::w!("SHELLDLL_DefView"), PCWSTR::null()).unwrap_or_default() };
-                     if !defview_hwnd.0.is_null() {
-                         tracing::warn!("No split WorkerW found. Fallback: Parenting directly to SHELLDLL_DefView (in Progman).");
-                         (defview_hwnd, true)
-                     } else {
-                         tracing::warn!("No suitable WorkerW and no DefView found. Using Progman.");
-                         (progman, false)
-                     }
+                if defview_hwnd.0.is_null() {
+                    return Err(anyhow::anyhow!("CRITICAL: Could not find SHELLDLL_DefView"));
+                }
+                
+                tracing::info!("Found DefView: {:?}", defview_hwnd);
+                
+                // Step 3: Find SysListView32 and make its background transparent
+                let syslistview = unsafe {
+                    FindWindowExW(defview_hwnd, HWND::default(), windows::core::w!("SysListView32"), PCWSTR::null()).unwrap_or_default()
                 };
                 
+                tracing::info!("Found SysListView32: {:?}", syslistview);
+                
+                // CRITICAL: Make SysListView32 background transparent so icons float over wallpaper
+                if !syslistview.0.is_null() {
+                    unsafe {
+                        SendMessageW(syslistview, 0x1026, WPARAM(0), LPARAM(0xFFFFFFFF)); // LVM_SETTEXTBKCOLOR = CLR_NONE
+                        SendMessageW(syslistview, 0x1001, WPARAM(0), LPARAM(0xFFFFFFFF)); // LVM_SETBKCOLOR = CLR_NONE
+                        tracing::info!("Set SysListView32 background to CLR_NONE (transparent)");
+                    }
+                }
+                
+                let sw = unsafe { GetSystemMetrics(SM_CXSCREEN) };
+                let sh = unsafe { GetSystemMetrics(SM_CYSCREEN) };
+                
+                // Register our window class
                 let instance = unsafe { GetModuleHandleW(None)? };
                 let window_class = windows::core::w!("MewWallpaperClass");
                 
@@ -170,40 +111,72 @@ impl WallpaperRenderer {
                     lpszClassName: window_class,
                     ..Default::default()
                 };
-
                 unsafe { RegisterClassW(&wc) };
-
-                // Visible child window with mouse pass-through handled by wnd_proc
+                
+                // =========================================================================
+                // PHASE 21: CLICK-THROUGH OVERLAY
+                // Create wallpaper as child of DefView, ON TOP, but with WS_EX_TRANSPARENT
+                // This makes our window visible but all mouse input passes through to icons
+                // =========================================================================
                 let hwnd = unsafe {
                     CreateWindowExW(
-                        WS_EX_NOACTIVATE,
+                        WS_EX_LAYERED | WS_EX_TRANSPARENT | WS_EX_NOACTIVATE,
                         window_class,
                         windows::core::w!("Mew Wallpaper"),
-                        WS_CHILD | WS_VISIBLE | WS_CLIPSIBLINGS | WS_CLIPCHILDREN,
+                        WS_CHILD | WS_VISIBLE,
                         0, 0, sw, sh,
-                        final_parent, 
-                        HMENU::default(), 
-                        instance, 
+                        defview_hwnd, // Parent is DefView - we're a sibling of SysListView32
+                        HMENU::default(),
+                        instance,
                         None,
                     )?
                 };
-
+                
+                tracing::info!("Created CLICK-THROUGH wallpaper window: {:?}", hwnd);
+                
+                // Make layered window fully opaque for rendering
                 unsafe {
-                    // Position behind icons but in front of static wallpaper
-                    // HWND_BOTTOM within WorkerW puts us at the right layer
-                    let _ = ShowWindow(final_parent, SW_SHOW);
-                    let _ = ShowWindow(hwnd, SW_SHOW);
-                    // Use HWND(1) which is HWND_BOTTOM - behind icons, in front of background
-                    let _ = SetWindowPos(hwnd, HWND(1 as *mut _), 0, 0, 0, 0, SWP_NOACTIVATE | SWP_NOMOVE | SWP_NOSIZE);
+                    let result = SetLayeredWindowAttributes(hwnd, COLORREF(0), 255, LWA_ALPHA);
+                    tracing::info!("SetLayeredWindowAttributes: {:?}", result);
                 }
-
-                let _ = tx.send(Ok((hwnd.0 as isize, final_parent.0 as isize, sw, sh)));
+                
+                // Position our wallpaper at HWND_BOTTOM of DefView's children
+                // This puts us BEHIND SysListView32 (icons)
+                // Combined with WS_EX_TRANSPARENT, clicks go through us to icons
+                unsafe {
+                    let result = SetWindowPos(
+                        hwnd,
+                        HWND(1 as *mut _), // HWND_BOTTOM
+                        0, 0, sw, sh,
+                        SWP_NOACTIVATE | SWP_SHOWWINDOW
+                    );
+                    tracing::info!("Wallpaper at HWND_BOTTOM: {:?}", result);
+                    
+                    // Bring SysListView32 to top so icons are visually above us
+                    if !syslistview.0.is_null() {
+                        let _ = SetWindowPos(
+                            syslistview,
+                            HWND(0 as *mut _), // HWND_TOP
+                            0, 0, 0, 0,
+                            SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE
+                        );
+                        tracing::info!("SysListView32 at HWND_TOP");
+                    }
+                }
+                
+                // Force redraw
+                unsafe {
+                    let _ = ShowWindow(hwnd, SW_SHOW);
+                    let _ = windows::Win32::Graphics::Gdi::InvalidateRect(defview_hwnd, None, BOOL(1));
+                }
+                
+                let _ = tx.send(Ok((hwnd.0 as isize, progman.0 as isize, sw, sh)));
                 Ok(hwnd.0 as isize)
             })();
 
             match res {
                 Ok(_) => {
-                    // Message loop is already running in the background of this thread
+                    // Message loop for our window
                     unsafe {
                         let mut msg = MSG::default();
                         while GetMessageW(&mut msg, HWND::default(), 0, 0).as_bool() {
@@ -332,9 +305,9 @@ impl WallpaperRenderer {
             let back_buffer: ID3D11Texture2D = self.swapchain.GetBuffer(0)?;
             self.context.CopyResource(&back_buffer, texture);
             
-            // Use Present(0, 0) for guaranteed frame delivery
-            // VSync=0 means no waiting, immediate presentation
-            let _ = self.swapchain.Present(0, windows::Win32::Graphics::Dxgi::DXGI_PRESENT(0));
+            // Use VSync Present(1, 0) to synchronize with display refresh
+            // This reduces GPU thrashing and eliminates lag spikes
+            let _ = self.swapchain.Present(1, windows::Win32::Graphics::Dxgi::DXGI_PRESENT(0));
         }
         Ok(())
     }
@@ -349,4 +322,37 @@ unsafe extern "system" fn wnd_proc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam:
         WM_ERASEBKGND => LRESULT(1), // Don't erase, we handle painting
         _ => DefWindowProcW(hwnd, msg, wparam, lparam),
     }
+}
+
+unsafe fn find_correct_workerw_layer(result: &mut HWND) {
+    EnumWindows(Some(find_workerw_enum_proc), LPARAM(result as *mut _ as isize));
+}
+
+unsafe extern "system" fn find_workerw_enum_proc(hwnd: HWND, lparam: LPARAM) -> BOOL {
+    let result_ptr = lparam.0 as *mut HWND;
+    
+    // Check if visible
+    if !IsWindowVisible(hwnd).as_bool() {
+        return BOOL(1);
+    }
+    
+    // Check class name
+    let mut class_name = [0u16; 256];
+    let len = GetClassNameW(hwnd, &mut class_name);
+    let class = String::from_utf16_lossy(&class_name[..len as usize]);
+    
+    if class == "WorkerW" {
+        // Check if it has DefView
+        let defview = FindWindowExW(hwnd, HWND::default(), windows::core::w!("SHELLDLL_DefView"), PCWSTR::null()).unwrap_or_default();
+        
+        if defview.0.is_null() {
+            // This is a candidate (WorkerW without DefView)
+            // Ideally we want the one created by 0x052C.
+            // Usually there is only one visible WorkerW without DefView after the split.
+            *result_ptr = hwnd;
+            return BOOL(0); // Stop enumeration
+        }
+    }
+    
+    BOOL(1)
 }
