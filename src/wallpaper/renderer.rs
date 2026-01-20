@@ -6,6 +6,7 @@ use windows::Win32::Graphics::Dxgi::*;
 use windows::Win32::System::LibraryLoader::*;
 use windows::core::{PCWSTR, Interface};
 use anyhow::Result;
+use ffmpeg_next as ffmpeg;
 use std::sync::mpsc;
 
 pub struct WallpaperRenderer {
@@ -114,9 +115,8 @@ impl WallpaperRenderer {
                 unsafe { RegisterClassW(&wc) };
                 
                 // =========================================================================
-                // PHASE 21: CLICK-THROUGH OVERLAY
-                // Create wallpaper as child of DefView, ON TOP, but with WS_EX_TRANSPARENT
-                // This makes our window visible but all mouse input passes through to icons
+                // PHASE 23: PROGMAN SIBLING + TRANSPARENT DEFVIEW
+                // This is the most stable approach for Windows 11 24H2 Canary.
                 // =========================================================================
                 let hwnd = unsafe {
                     CreateWindowExW(
@@ -125,14 +125,14 @@ impl WallpaperRenderer {
                         windows::core::w!("Mew Wallpaper"),
                         WS_CHILD | WS_VISIBLE,
                         0, 0, sw, sh,
-                        defview_hwnd, // Parent is DefView - we're a sibling of SysListView32
+                        progman, // Sibling of DefView
                         HMENU::default(),
                         instance,
                         None,
                     )?
                 };
                 
-                tracing::info!("Created CLICK-THROUGH wallpaper window: {:?}", hwnd);
+                tracing::info!("Created PROGMAN sibling wallpaper window: {:?}", hwnd);
                 
                 // Make layered window fully opaque for rendering
                 unsafe {
@@ -140,34 +140,34 @@ impl WallpaperRenderer {
                     tracing::info!("SetLayeredWindowAttributes: {:?}", result);
                 }
                 
-                // Position our wallpaper at HWND_BOTTOM of DefView's children
-                // This puts us BEHIND SysListView32 (icons)
-                // Combined with WS_EX_TRANSPARENT, clicks go through us to icons
+                // Position our wallpaper immediately BEHIND DefView
                 unsafe {
                     let result = SetWindowPos(
                         hwnd,
-                        HWND(1 as *mut _), // HWND_BOTTOM
+                        defview_hwnd, // Insert AFTER DefView -> visually BELOW it
                         0, 0, sw, sh,
                         SWP_NOACTIVATE | SWP_SHOWWINDOW
                     );
-                    tracing::info!("Wallpaper at HWND_BOTTOM: {:?}", result);
-                    
-                    // Bring SysListView32 to top so icons are visually above us
-                    if !syslistview.0.is_null() {
-                        let _ = SetWindowPos(
-                            syslistview,
-                            HWND(0 as *mut _), // HWND_TOP
-                            0, 0, 0, 0,
-                            SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE
-                        );
-                        tracing::info!("SysListView32 at HWND_TOP");
+                    tracing::info!("Wallpaper positioned behind DefView: {:?}", result);
+                }
+                
+                // Ensure DefView doesn't have an opaque background
+                if !syslistview.0.is_null() {
+                    unsafe {
+                        SendMessageW(syslistview, 0x1026, WPARAM(0), LPARAM(0xFFFFFFFF)); // LVM_SETTEXTBKCOLOR = CLR_NONE
+                        SendMessageW(syslistview, 0x1001, WPARAM(0), LPARAM(0xFFFFFFFF)); // LVM_SETBKCOLOR = CLR_NONE
+                        
+                        // Force Redraw of the desktop
+                        let _ = windows::Win32::Graphics::Gdi::InvalidateRect(syslistview, None, BOOL(1));
+                        let _ = windows::Win32::Graphics::Gdi::InvalidateRect(defview_hwnd, None, BOOL(1));
+                        tracing::info!("Forced desktop redraw for icons");
                     }
                 }
                 
-                // Force redraw
+                // Force redraw of wallpaper
                 unsafe {
                     let _ = ShowWindow(hwnd, SW_SHOW);
-                    let _ = windows::Win32::Graphics::Gdi::InvalidateRect(defview_hwnd, None, BOOL(1));
+                    let _ = windows::Win32::Graphics::Gdi::InvalidateRect(progman, None, BOOL(1));
                 }
                 
                 let _ = tx.send(Ok((hwnd.0 as isize, progman.0 as isize, sw, sh)));

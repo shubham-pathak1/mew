@@ -1,5 +1,6 @@
 use crate::wallpaper::{VideoDecoder, WallpaperRenderer};
 use anyhow::Result;
+use ffmpeg_next as ffmpeg;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use tokio::time::sleep;
@@ -90,6 +91,7 @@ impl WallpaperPlayer {
 
             if let Some(ref mut dec) = decoder {
                 let frame_time = Duration::from_secs_f64(1.0 / fps as f64);
+                let mut rgb_frame = ffmpeg::util::frame::Video::empty();
 
                 if next_frame_target_time < Instant::now() {
                     next_frame_target_time = Instant::now();
@@ -100,11 +102,10 @@ impl WallpaperPlayer {
                     sleep(sleep_duration).await;
                 }
 
-                // Immersion: No ? here.
-                let next_frame_res = dec.next_frame();
-                match next_frame_res {
-                    Ok(Some(frame_data)) => {
-                        if let Err(e) = renderer.render_frame(&frame_data, dec.width(), dec.height()) {
+                // Zero-allocation frame fetch
+                match dec.next_frame(&mut rgb_frame) {
+                    Ok(true) => {
+                        if let Err(e) = renderer.render_frame(rgb_frame.data(0), dec.width(), dec.height()) {
                             tracing::error!("Render error: {}. Recovering...", e);
                             match WallpaperRenderer::new() {
                                 Ok(new_renderer) => {
@@ -118,11 +119,11 @@ impl WallpaperPlayer {
                             }
                         }
                     }
-                    Ok(None) => {
+                    Ok(false) => {
                         // Loop
                         let _ = dec.seek_to_start();
-                        if let Ok(Some(frame_data)) = dec.next_frame() {
-                            let _ = renderer.render_frame(&frame_data, dec.width(), dec.height());
+                        if let Ok(true) = dec.next_frame(&mut rgb_frame) {
+                            let _ = renderer.render_frame(rgb_frame.data(0), dec.width(), dec.height());
                         }
                     }
                     Err(e) => {

@@ -38,7 +38,7 @@ impl VideoDecoder {
             ffmpeg::format::Pixel::BGRA,
             target_width,
             target_height,
-            ffmpeg::software::scaling::flag::Flags::FAST_BILINEAR,
+            ffmpeg::software::scaling::flag::Flags::BILINEAR, // Better balance for 4K scaling
         )?;
 
         Ok(Self {
@@ -51,29 +51,26 @@ impl VideoDecoder {
         })
     }
 
-    pub fn next_frame(&mut self) -> Result<Option<Vec<u8>>> {
-        let mut frame = ffmpeg::util::frame::Video::empty();
-        
+    pub fn next_frame(&mut self, output_frame: &mut ffmpeg::util::frame::Video) -> Result<bool> {
         let mut total_scanned = 0;
         while let Some((stream, packet)) = self.ictx.packets().next() {
             total_scanned += 1;
             if total_scanned > 500 {
-                tracing::warn!("Decoder scanned 500 packets without finding a video frame. Returning None to prevent lockup.");
-                return Ok(None);
+                tracing::warn!("Decoder scanned 500 packets without finding a video frame.");
+                return Ok(false);
             }
 
             if stream.index() == self.video_stream_index {
                 self.decoder.send_packet(&packet)?;
+                let mut frame = ffmpeg::util::frame::Video::empty();
                 if self.decoder.receive_frame(&mut frame).is_ok() {
-                    let mut rgb_frame = ffmpeg::util::frame::Video::empty();
-                    self.scaler.run(&frame, &mut rgb_frame)?;
-                    return Ok(Some(rgb_frame.data(0).to_vec()));
+                    self.scaler.run(&frame, output_frame)?;
+                    return Ok(true);
                 }
             }
         }
 
-        // Handle loop? For now just return None to signal EOF or restart outside
-        Ok(None)
+        Ok(false)
     }
 
     pub fn seek_to_start(&mut self) -> Result<()> {
